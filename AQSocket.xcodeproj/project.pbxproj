@@ -7,16 +7,22 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3888F2B2149ED04E00DC886C /* AQSocketReader+PrivateInternal.h in Headers */ = {isa = PBXBuildFile; fileRef = 3888F2B1149ED04E00DC886C /* AQSocketReader+PrivateInternal.h */; };
 		38FFA31D149BCAB800B0D4D0 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 38FFA31C149BCAB800B0D4D0 /* Foundation.framework */; };
 		38FFA323149BCAB800B0D4D0 /* AQSocket.m in Sources */ = {isa = PBXBuildFile; fileRef = 38FFA322149BCAB800B0D4D0 /* AQSocket.m */; };
+		38FFA32B149BD9CF00B0D4D0 /* AQSocketReader.h in Headers */ = {isa = PBXBuildFile; fileRef = 38FFA329149BD9CF00B0D4D0 /* AQSocketReader.h */; };
+		38FFA32C149BD9CF00B0D4D0 /* AQSocketReader.m in Sources */ = {isa = PBXBuildFile; fileRef = 38FFA32A149BD9CF00B0D4D0 /* AQSocketReader.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		3888F2B1149ED04E00DC886C /* AQSocketReader+PrivateInternal.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "AQSocketReader+PrivateInternal.h"; sourceTree = "<group>"; };
 		38FFA319149BCAB800B0D4D0 /* libAQSocket.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libAQSocket.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		38FFA31C149BCAB800B0D4D0 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
-		38FFA320149BCAB800B0D4D0 /* AQSocket-Prefix.pch */ = {isa = PBXFileReference; path = "AQSocket-Prefix.pch"; sourceTree = "<group>"; };
-		38FFA321149BCAB800B0D4D0 /* AQSocket.h */ = {isa = PBXFileReference; path = AQSocket.h; sourceTree = "<group>"; };
+		38FFA320149BCAB800B0D4D0 /* AQSocket-Prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "AQSocket-Prefix.pch"; sourceTree = "<group>"; };
+		38FFA321149BCAB800B0D4D0 /* AQSocket.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AQSocket.h; sourceTree = "<group>"; };
 		38FFA322149BCAB800B0D4D0 /* AQSocket.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AQSocket.m; sourceTree = "<group>"; };
+		38FFA329149BD9CF00B0D4D0 /* AQSocketReader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AQSocketReader.h; sourceTree = "<group>"; };
+		38FFA32A149BD9CF00B0D4D0 /* AQSocketReader.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AQSocketReader.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -61,6 +67,9 @@
 			children = (
 				38FFA321149BCAB800B0D4D0 /* AQSocket.h */,
 				38FFA322149BCAB800B0D4D0 /* AQSocket.m */,
+				38FFA329149BD9CF00B0D4D0 /* AQSocketReader.h */,
+				38FFA32A149BD9CF00B0D4D0 /* AQSocketReader.m */,
+				3888F2B1149ED04E00DC886C /* AQSocketReader+PrivateInternal.h */,
 				38FFA31F149BCAB800B0D4D0 /* Supporting Files */,
 			);
 			path = AQSocket;
@@ -81,6 +90,8 @@
 			isa = PBXHeadersBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				38FFA32B149BD9CF00B0D4D0 /* AQSocketReader.h in Headers */,
+				3888F2B2149ED04E00DC886C /* AQSocketReader+PrivateInternal.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -111,7 +122,7 @@
 			isa = PBXProject;
 			attributes = {
 				LastUpgradeCheck = 0420;
-				ORGANIZATIONNAME = "Kobo Inc";
+				ORGANIZATIONNAME = "Jim Dovey";
 			};
 			buildConfigurationList = 38FFA313149BCAB800B0D4D0 /* Build configuration list for PBXProject "AQSocket" */;
 			compatibilityVersion = "Xcode 3.2";
@@ -136,6 +147,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				38FFA323149BCAB800B0D4D0 /* AQSocket.m in Sources */,
+				38FFA32C149BD9CF00B0D4D0 /* AQSocketReader.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -227,6 +239,7 @@
 				38FFA328149BCAB800B0D4D0 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
