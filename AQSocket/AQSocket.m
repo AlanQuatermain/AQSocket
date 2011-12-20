@@ -51,7 +51,7 @@
 
 #define USING_MRR (!__has_feature(objc_arc))
 
-/// A sly little NSData class simplifying the dispatch_data_t -> NSData transition.
+// A sly little NSData class simplifying the dispatch_data_t -> NSData transition.
 @interface _AQDispatchData : NSData
 {
     dispatch_data_t _ddata;
@@ -100,6 +100,8 @@
 
 @end
 
+#pragma mark -
+
 @interface AQSocket (CFSocketConnectionCallback)
 - (void) connectedSuccessfully;
 - (void) connectionFailedWithError: (SInt32) err;
@@ -119,10 +121,12 @@ static void _CFSocketConnectionCallBack(CFSocketRef s, CFSocketCallBackType type
 
 static BOOL _SocketAddressFromString(NSString * addrStr, BOOL isNumeric, UInt16 port, struct sockaddr_storage * outAddr, NSError * __autoreleasing* outError)
 {
-    // Glags for getaddrinfo():
-    // AI_ADDRCONFIG: Only return IPv4 or IPv6 if the local host has configured
+    // Flags for getaddrinfo():
+    //
+    // `AI_ADDRCONFIG`: Only return IPv4 or IPv6 if the local host has configured
     // interfaces for those types.
-    // AI_V4MAPPED: If no IPv6 addresses found, return an IPv4-mapped IPv6
+    //
+    // `AI_V4MAPPED`: If no IPv6 addresses found, return an IPv4-mapped IPv6
     // address for any IPv4 addresses found.
     int flags = AI_ADDRCONFIG|AI_V4MAPPED;
     
@@ -184,9 +188,14 @@ static BOOL _SocketAddressFromString(NSString * addrStr, BOOL isNumeric, UInt16 
     return ( 0 );
 }
 
+#pragma mark -
+
 @implementation AQSocket
 {
+    int                 _socketType;
+    int                 _socketProtocol;
     CFSocketRef         _socketRef;
+    CFRunLoopSourceRef  _socketRunloopSource;
     dispatch_io_t       _socketIO;
     AQSocketReader *    _socketReader;
     dispatch_source_t   _readWatcher;
@@ -201,22 +210,8 @@ static BOOL _SocketAddressFromString(NSString * addrStr, BOOL isNumeric, UInt16 
     if ( self == nil )
         return ( nil );
     
-    CFSocketContext ctx = {
-        .version = 0,
-        .info = (__bridge void *)self,  // just a plain bridge cast
-        .retain = CFRetain,
-        .release = CFRelease,
-        .copyDescription = CFCopyDescription
-    };
-    
-    _socketRef = CFSocketCreate(kCFAllocatorDefault, AF_INET6, type, (type == SOCK_DGRAM ? IPPROTO_UDP : IPPROTO_TCP), kCFSocketConnectCallBack, _CFSocketConnectionCallBack, &ctx);
-    if ( _socketRef == NULL )
-    {
-#if USING_MRR
-        [self release];
-#endif
-        return ( nil );
-    }
+    _socketType = type;
+    _socketProtocol = (type == SOCK_STREAM ? IPPROTO_TCP : IPPROTO_UDP);
     
     return ( self );
 }
@@ -235,14 +230,30 @@ static BOOL _SocketAddressFromString(NSString * addrStr, BOOL isNumeric, UInt16 
     }
     if ( _socketIO != NULL )
     {
-        // closing the socket IO also releases _socketRef
+        // Closing the socket IO also releases _socketRef
         dispatch_io_close(_socketIO, DISPATCH_IO_STOP);
         dispatch_release(_socketIO);
     }
     else if ( _socketRef != NULL )
     {
-        // not got around to initializing the dispatch IO channel
+        // Not got around to initializing the dispatch IO channel yet,
+        // so we will have to release the socket ref manually.
         CFRelease(_socketRef);
+    }
+    if ( _socketRunloopSource != NULL )
+    {
+        // Ensure the source is no longer scheduled in any run loops.
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), _socketRunloopSource, kCFRunLoopDefaultMode);
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), _socketRunloopSource, (__bridge CFStringRef)
+#if TARGET_OS_IPHONE
+                              UITrackingRunLoopMode
+#else
+                              NSEventTrackingRunLoopMode
+#endif
+                              );
+        
+        // Now we can safely release our reference to it.
+        CFRelease(_socketRunloopSource);
     }
 #if USING_MRR
     [_socketReader release];
@@ -283,25 +294,46 @@ static BOOL _SocketAddressFromString(NSString * addrStr, BOOL isNumeric, UInt16 
         return ( NO );
     }
     
+    // Create the socket with the appropriate socket family from the address
+    // structure.
+    CFSocketContext ctx = {
+        .version = 0,
+        .info = (__bridge void *)self,  // just a plain bridge cast
+        .retain = CFRetain,
+        .release = CFRelease,
+        .copyDescription = CFCopyDescription
+    };
+    
+    _socketRef = CFSocketCreate(kCFAllocatorDefault, saddr->sa_family, _socketType, _socketProtocol, kCFSocketConnectCallBack, _CFSocketConnectionCallBack, &ctx);
+    if ( _socketRef == NULL )
+    {
+        // We failed to create the socket, so build an error (if appropriate)
+        // and return `NO`.
+        if ( error != NULL )
+        {
+            // This error code is -1004.
+            *error = [NSError errorWithDomain: NSURLErrorDomain code: NSURLErrorCannotConnectToHost userInfo: nil];
+        }
+        
+        return ( NO );
+    }
+    
     // Create a runloop source for the socket reference and bind it to a
     // runloop that's guaranteed to be running some time in the future: the main
     // one.
-    CFRunLoopSourceRef rls = CFSocketCreateRunLoopSource(kCFAllocatorDefault, _socketRef, 0);
-    CFRunLoopAddSource(CFRunLoopGetMain(), rls, kCFRunLoopDefaultMode);
+    _socketRunloopSource = CFSocketCreateRunLoopSource(kCFAllocatorDefault, _socketRef, 0);
+    CFRunLoopAddSource(CFRunLoopGetMain(), _socketRunloopSource, kCFRunLoopDefaultMode);
     
     // We also want to ensure that the connection callback fires during
     // input event tracking. There are different constants for this on iOS and
     // OS X, so I've used a compiler switch for that.
-    CFRunLoopAddSource(CFRunLoopGetMain(), rls, (__bridge CFStringRef)
+    CFRunLoopAddSource(CFRunLoopGetMain(), _socketRunloopSource, (__bridge CFStringRef)
 #if TARGET_OS_IPHONE
                        UITrackingRunLoopMode
 #else
                        NSEventTrackingRunLoopMode
 #endif
                        );
-    
-    // This becomes owned by the runloop modes now.
-    CFRelease(rls);
     
     // Start the connection process.
     // Let's fire off the connection attempt and wait for the socket to become
@@ -314,6 +346,10 @@ static BOOL _SocketAddressFromString(NSString * addrStr, BOOL isNumeric, UInt16 
                                                  length: saddr->sa_len
                                            freeWhenDone: NO];
     CFSocketError err = CFSocketConnectToAddress(_socketRef, (__bridge CFDataRef)data, -1);
+#if USING_MRR
+    [data release];
+#endif
+    
     if ( err != kCFSocketSuccess )
     {
         NSLog(@"Error connecting socket: %ld", err);
@@ -447,6 +483,20 @@ static BOOL _SocketAddressFromString(NSString * addrStr, BOOL isNumeric, UInt16 
     // 2. The AQSocketReader object which will serve as our read buffer.
     // 3. The dispatch source which will notify us of incoming data.
     
+    // Before all that though, we'll remove the CFSocketRef from the runloop.
+    CFRunLoopRemoveSource(CFRunLoopGetMain(), _socketRunloopSource, kCFRunLoopDefaultMode);
+    CFRunLoopRemoveSource(CFRunLoopGetMain(), _socketRunloopSource, (__bridge CFStringRef)
+#if TARGET_OS_IPHONE
+                          UITrackingRunLoopMode
+#else
+                          NSEventTrackingRunLoopMode
+#endif
+                          );
+    
+    // All done with this one now.
+    CFRelease(_socketRunloopSource);
+    _socketRunloopSource = NULL;
+    
     // First, the IO channel. We will have its cleanup handler release the
     // CFSocketRef for us; in other words, the IO channel now owns the
     // CFSocketRef.
@@ -518,6 +568,10 @@ static BOOL _SocketAddressFromString(NSString * addrStr, BOOL isNumeric, UInt16 
 {
     NSError * info = [NSError errorWithDomain: NSPOSIXErrorDomain code: err userInfo: nil];
     self.eventHandler(AQSocketEventConnectionFailed, info);
+    
+    // Get rid of the socket now, since we might try to re-connect, which will
+    // create a new CFSocketRef.
+    CFRelease(_socketRef); _socketRef = NULL;
 }
 
 @end

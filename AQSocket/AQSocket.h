@@ -99,8 +99,6 @@ typedef void (^AQSocketEventHandler)(AQSocketEvent event, id info);
  return the `error` parameter will be initialized to a new autoreleased NSError
  instance containing detailed information.
  @param saddr A socket address structure containing a remote server address.
- @param port The port number to which to connect.
- @param timeout The maximum time to wait for the connection to initialize.
  @param error If this method returns `NO`, then on return this value contains
  an NSError object detailing the error.
  @result `YES` if the connection initialization takes place, `NO` if something prevented it from doing so.
@@ -113,7 +111,6 @@ typedef void (^AQSocketEventHandler)(AQSocketEvent event, id info);
  the caller to pass a DNS hostname to specify the destination for the connection.
  @param hostname The DNS hostname of the server to which to attempt connection.
  @param port The port number to which to connect.
- @param timeout The maximum time to wait for the connection to initialize.
  @param error If this method returns `NO`, then on return this value contains
  an NSError object detailing the error.
  @result Returns `YES` if the async connection attempt began, `NO` otherwise.
@@ -128,7 +125,6 @@ typedef void (^AQSocketEventHandler)(AQSocketEvent event, id info);
  for the connection.
  @param address The IPv4/6 address of the server to which to attempt connection.
  @param port The port number to which to connect.
- @param timeout The maximum time to wait for the connection to initialize.
  @param error If this method returns `NO`, then on return this value contains
  an NSError object detailing the error.
  @result Returns `YES` if the async connection attempt began, `NO` otherwise.
