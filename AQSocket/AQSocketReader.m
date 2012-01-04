@@ -169,6 +169,8 @@
     {
         dispatch_semaphore_signal(_lock);
     }
+	
+	return ( result );
 }
 
 - (NSData *) readBytes: (NSUInteger) count
@@ -191,6 +193,8 @@
     {
         dispatch_semaphore_signal(_lock);
     }
+	
+	return ( result );
 }
 
 - (NSInteger) readBytes: (uint8_t *) buffer size: (NSUInteger) bufSize
@@ -210,6 +214,8 @@
     {
         dispatch_semaphore_signal(_lock);
     }
+	
+	return ( numRead );
 }
 
 @end
