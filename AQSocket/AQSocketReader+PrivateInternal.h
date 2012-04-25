@@ -37,4 +37,5 @@
 
 @interface AQSocketReader (PrivateInternal)
 - (void) appendDispatchData: (dispatch_data_t) data;
+- (void) appendData: (NSData *) data;
 @end

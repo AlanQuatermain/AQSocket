@@ -107,6 +107,18 @@ typedef void (^AQSocketEventHandler)(AQSocketEvent event, id info);
                     error: (NSError **) error;
 
 /**
+ This method allows the creation of a listening socket, which will accept()
+ incoming connection requests on either the loopback interface or the appropriate
+ IPv4/IPV6 'any' address. It will choose its own port, which can be obtained using
+ the `port` property.
+ @param useLoopback If `YES`, bind to the loopback interface. Otherwise, use 'any'.
+ @param error If this method returns `NO`, then on return this value contains
+ an NSError object detailing the error.
+ @result `YES` if the connection could be bound, `NO` otherwise.
+ */
+- (BOOL) listenForConnections: (BOOL) useLoopback error: (NSError **) error;
+
+/**
  This is a wrapper around connectToAddress:error: which allows
  the caller to pass a DNS hostname to specify the destination for the connection.
  @param hostname The DNS hostname of the server to which to attempt connection.

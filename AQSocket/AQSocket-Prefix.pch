@@ -3,5 +3,15 @@
 //
 
 #ifdef __OBJC__
-    #import <Foundation/Foundation.h>
+
+# import <Foundation/Foundation.h>
+
+# define USING_MRR (!__has_feature(objc_arc))
+
+# if defined(OS_OBJECT_USE_OBJC) && OS_OBJECT_USE_OBJC
+#  define DISPATCH_USES_ARC !USING_MRR
+# else
+#  define DISPATCH_USES_ARC 0
+# endif
+
 #endif

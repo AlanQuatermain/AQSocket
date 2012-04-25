@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		38634F3D15473DBD007DA652 /* AQSocketIOChannel.h in Headers */ = {isa = PBXBuildFile; fileRef = 38634F3B15473DBD007DA652 /* AQSocketIOChannel.h */; };
+		38634F3E15473DBD007DA652 /* AQSocketIOChannel.m in Sources */ = {isa = PBXBuildFile; fileRef = 38634F3C15473DBD007DA652 /* AQSocketIOChannel.m */; };
 		3888F2B2149ED04E00DC886C /* AQSocketReader+PrivateInternal.h in Headers */ = {isa = PBXBuildFile; fileRef = 3888F2B1149ED04E00DC886C /* AQSocketReader+PrivateInternal.h */; };
 		38FFA31D149BCAB800B0D4D0 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 38FFA31C149BCAB800B0D4D0 /* Foundation.framework */; };
 		38FFA323149BCAB800B0D4D0 /* AQSocket.m in Sources */ = {isa = PBXBuildFile; fileRef = 38FFA322149BCAB800B0D4D0 /* AQSocket.m */; };
@@ -15,6 +17,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		38634F3B15473DBD007DA652 /* AQSocketIOChannel.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AQSocketIOChannel.h; sourceTree = "<group>"; };
+		38634F3C15473DBD007DA652 /* AQSocketIOChannel.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = AQSocketIOChannel.m; sourceTree = "<group>"; };
 		3888F2B1149ED04E00DC886C /* AQSocketReader+PrivateInternal.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "AQSocketReader+PrivateInternal.h"; sourceTree = "<group>"; };
 		38FFA319149BCAB800B0D4D0 /* libAQSocket.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libAQSocket.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		38FFA31C149BCAB800B0D4D0 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
@@ -70,6 +74,8 @@
 				38FFA329149BD9CF00B0D4D0 /* AQSocketReader.h */,
 				38FFA32A149BD9CF00B0D4D0 /* AQSocketReader.m */,
 				3888F2B1149ED04E00DC886C /* AQSocketReader+PrivateInternal.h */,
+				38634F3B15473DBD007DA652 /* AQSocketIOChannel.h */,
+				38634F3C15473DBD007DA652 /* AQSocketIOChannel.m */,
 				38FFA31F149BCAB800B0D4D0 /* Supporting Files */,
 			);
 			path = AQSocket;
@@ -92,6 +98,7 @@
 			files = (
 				38FFA32B149BD9CF00B0D4D0 /* AQSocketReader.h in Headers */,
 				3888F2B2149ED04E00DC886C /* AQSocketReader+PrivateInternal.h in Headers */,
+				38634F3D15473DBD007DA652 /* AQSocketIOChannel.h in Headers */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -121,7 +128,7 @@
 		38FFA310149BCAB800B0D4D0 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 0420;
+				LastUpgradeCheck = 0440;
 				ORGANIZATIONNAME = "Jim Dovey";
 			};
 			buildConfigurationList = 38FFA313149BCAB800B0D4D0 /* Build configuration list for PBXProject "AQSocket" */;
@@ -148,6 +155,7 @@
 			files = (
 				38FFA323149BCAB800B0D4D0 /* AQSocket.m in Sources */,
 				38FFA32C149BD9CF00B0D4D0 /* AQSocketReader.m in Sources */,
+				38634F3E15473DBD007DA652 /* AQSocketIOChannel.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

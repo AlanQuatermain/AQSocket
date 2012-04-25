@@ -36,6 +36,7 @@
 #import "AQSocket.h"
 #import "AQSocketReader.h"
 #import "AQSocketReader+PrivateInternal.h"
+#import "AQSocketIOChannel.h"
 #import <sys/socket.h>
 #import <netinet/in.h>
 #import <arpa/inet.h>
@@ -49,62 +50,13 @@
 #import <AppKit/NSApplication.h>
 #endif
 
-#define USING_MRR (!__has_feature(objc_arc))
-
-// A sly little NSData class simplifying the dispatch_data_t -> NSData transition.
-@interface _AQDispatchData : NSData
-{
-    dispatch_data_t _ddata;
-    const void *    _buf;
-    size_t          _len;
-}
-- (id) initWithDispatchData: (dispatch_data_t) ddata;
-@end
-
-@implementation _AQDispatchData
-
-- (id) initWithDispatchData: (dispatch_data_t) ddata
-{
-    self = [super init];
-    if ( self == nil )
-        return ( nil );
-    
-    // First off, ensure we have a contiguous range of bytes to deal with.
-    ddata = dispatch_data_create_map(ddata, (void *)_buf, &_len);
-    
-    // Retain the dispatch data object to keep the underlying bytes in memory.
-    dispatch_retain(ddata);
-    _ddata = ddata;
-    
-    return ( self );
-}
-
-- (void) dealloc
-{
-    if ( _ddata != NULL )
-        dispatch_release(_ddata);
-#if USING_MRR
-    [super dealloc];
-#endif
-}
-
-- (const void *) bytes
-{
-    return ( _buf );
-}
-
-- (NSUInteger) length
-{
-    return ( _len );
-}
-
-@end
-
-#pragma mark -
-
 @interface AQSocket (CFSocketConnectionCallback)
 - (void) connectedSuccessfully;
 - (void) connectionFailedWithError: (SInt32) err;
+@end
+
+@interface AQSocket (CFSocketAcceptCallback)
+- (void) acceptNewConnection: (CFSocketNativeHandle) clientSock;
 @end
 
 static void _CFSocketConnectionCallBack(CFSocketRef s, CFSocketCallBackType type, CFDataRef address, const void *data, void *info)
@@ -117,6 +69,15 @@ static void _CFSocketConnectionCallBack(CFSocketRef s, CFSocketCallBackType type
         [aqsock connectedSuccessfully];
     else
         [aqsock connectionFailedWithError: *((SInt32 *)data)];
+}
+
+static void _CFSocketAcceptCallBack(CFSocketRef s, CFSocketCallBackType type, CFDataRef address, const void *data, void *info)
+{
+    if ( type != kCFSocketAcceptCallBack )
+        return;
+    
+    AQSocket * aqsock = (__bridge AQSocket *)info;
+    [aqsock acceptNewConnection: *((CFSocketNativeHandle *)data)];
 }
 
 static BOOL _SocketAddressFromString(NSString * addrStr, BOOL isNumeric, UInt16 port, struct sockaddr_storage * outAddr, NSError * __autoreleasing* outError)
@@ -196,7 +157,7 @@ static BOOL _SocketAddressFromString(NSString * addrStr, BOOL isNumeric, UInt16 
     int                 _socketProtocol;
     CFSocketRef         _socketRef;
     CFRunLoopSourceRef  _socketRunloopSource;
-    dispatch_io_t       _socketIO;
+    AQSocketIOChannel * _socketIO;
     AQSocketReader *    _socketReader;
     dispatch_source_t   _readWatcher;
 }
@@ -221,20 +182,33 @@ static BOOL _SocketAddressFromString(NSString * addrStr, BOOL isNumeric, UInt16 
     return ( [self initWithSocketType: SOCK_STREAM] );
 }
 
+- (id) initWithConnectedSocket: (CFSocketNativeHandle) nativeSocket
+{
+    int socktype = SOCK_STREAM;
+    socklen_t len = 0;
+    
+    getsockopt(nativeSocket, SOL_SOCKET, SO_TYPE, &socktype, &len);
+    self = [self initWithSocketType: socktype];
+    if ( self == nil )
+        return ( nil );
+    
+    CFSocketContext ctx = { 0, (__bridge void *)self, NULL, NULL, CFCopyDescription };
+    _socketRef = CFSocketCreateWithNative(kCFAllocatorDefault, nativeSocket, 0, NULL, &ctx);
+    [self connectedSuccessfully];   // this sets up the dispatch sources for us
+    
+    return ( self );
+}
+
 - (void) dealloc
 {
+#if DISPATCH_USES_ARC == 0
     if ( _readWatcher != NULL )
     {
         dispatch_source_cancel(_readWatcher);
         dispatch_release(_readWatcher);
     }
-    if ( _socketIO != NULL )
-    {
-        // Closing the socket IO also releases _socketRef
-        dispatch_io_close(_socketIO, DISPATCH_IO_STOP);
-        dispatch_release(_socketIO);
-    }
-    else if ( _socketRef != NULL )
+#endif
+    if ( _socketRef != NULL )
     {
         // Not got around to initializing the dispatch IO channel yet,
         // so we will have to release the socket ref manually.
@@ -260,6 +234,83 @@ static BOOL _SocketAddressFromString(NSString * addrStr, BOOL isNumeric, UInt16 
 #endif
 }
 
+- (BOOL) listenForConnections: (BOOL) useLoopback error: (NSError **) error
+{
+    // This is only initialized once we have successfully set up the connection.
+    if ( _socketIO != nil )
+    {
+        if ( error != NULL )
+        {
+            NSDictionary * info = [[NSDictionary alloc] initWithObjectsAndKeys: NSLocalizedString(@"Already connected.", @"Connection error"), NSLocalizedDescriptionKey, nil];
+            *error = [NSError errorWithDomain: NSCocoaErrorDomain code: 1 userInfo: info];
+#if USING_MRR
+            [info release];
+#endif
+        }
+        
+        return ( NO );
+    }
+    
+    struct sockaddr_storage saddr = {0};
+    NSData * sockData = [NSData dataWithBytesNoCopy: &saddr length: sizeof(saddr) freeWhenDone: NO];
+    
+    // Create a local address to which we'll bind. Sticking with IPv4 for now.
+    struct sockaddr_in *pIn = (struct sockaddr_in *)&saddr;
+    pIn->sin_family = AF_INET;
+    pIn->sin_len = sizeof(struct sockaddr_in);
+    pIn->sin_port = 0;
+    pIn->sin_addr.s_addr = (useLoopback ? INADDR_LOOPBACK : INADDR_ANY);
+    
+    // Create the socket with the appropriate socket family from the address
+    // structure.
+    CFSocketContext ctx = {
+        .version = 0,
+        .info = (__bridge void *)self,  // just a plain bridge cast
+        .retain = CFRetain,
+        .release = CFRelease,
+        .copyDescription = CFCopyDescription
+    };
+    
+    _socketRef = CFSocketCreate(kCFAllocatorDefault, saddr.ss_family, _socketType, _socketProtocol, kCFSocketAcceptCallBack, _CFSocketAcceptCallBack, &ctx);
+    if ( _socketRef == NULL )
+    {
+        // We failed to create the socket, so build an error (if appropriate)
+        // and return `NO`.
+        if ( error != NULL )
+        {
+            // This error code is -1004.
+            *error = [NSError errorWithDomain: NSURLErrorDomain code: NSURLErrorCannotConnectToHost userInfo: nil];
+        }
+        
+        return ( NO );
+    }
+    
+    // Create a runloop source for the socket reference and bind it to a
+    // runloop that's guaranteed to be running some time in the future: the main
+    // one.
+    _socketRunloopSource = CFSocketCreateRunLoopSource(kCFAllocatorDefault, _socketRef, 0);
+    CFRunLoopAddSource(CFRunLoopGetMain(), _socketRunloopSource, kCFRunLoopDefaultMode);
+    
+    // We also want to ensure that the connection callback fires during
+    // input event tracking. There are different constants for this on iOS and
+    // OS X, so I've used a compiler switch for that.
+    CFRunLoopAddSource(CFRunLoopGetMain(), _socketRunloopSource, (__bridge CFStringRef)
+#if TARGET_OS_IPHONE
+                       UITrackingRunLoopMode
+#else
+                       NSEventTrackingRunLoopMode
+#endif
+                       );
+    
+    if ( CFSocketSetAddress(_socketRef, (__bridge CFDataRef)sockData) != kCFSocketSuccess )
+        return ( NO );
+    
+    CFSocketSetSocketFlags(_socketRef, kCFSocketAutomaticallyReenableAcceptCallBack);
+    CFSocketEnableCallBacks(_socketRef, kCFSocketAcceptCallBack);
+    
+    return ( YES );
+}
+
 - (BOOL) connectToAddress: (struct sockaddr *) saddr
                     error: (NSError **) error
 {
@@ -280,7 +331,7 @@ static BOOL _SocketAddressFromString(NSString * addrStr, BOOL isNumeric, UInt16 
     
     // We require that an event handler be set, so we can notify
     // connection success
-    if ( self.eventHandler == NULL )
+    if ( self.eventHandler == nil )
     {
         if ( error != NULL )
         {
@@ -426,49 +477,13 @@ static BOOL _SocketAddressFromString(NSString * addrStr, BOOL isNumeric, UInt16 
 {
     NSParameterAssert([bytes length] != 0);
     
-    if ( _socketIO == NULL )
+    if ( _socketIO == nil )
     {
         [NSException raise: NSInternalInconsistencyException format: @"-[%@ %@]: socket is not connected.", NSStringFromClass([self class]), NSStringFromSelector(_cmd)];
     }
     
-    // This copy call ensures we have an immutable data object. If we were 
-    // passed an immutable NSData, the copy is actually only a retain.
-    // We convert it to a CFDataRef in order to get manual reference counting
-    // semantics in order to keep the data object alive until the dispatch_data_t
-    // in which we're using it is itself released.
-    CFDataRef staticData = CFBridgingRetain([bytes copy]);
-    
-    dispatch_data_t ddata = dispatch_data_create(CFDataGetBytePtr(staticData), CFDataGetLength(staticData), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        // When the dispatch data object is deallocated, release our CFData ref.
-        CFRelease(staticData);
-    });
-    dispatch_io_write(_socketIO, 0, ddata, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(_Bool done, dispatch_data_t data, int error) {
-        if ( done == false )
-            return;
-        
-        if ( completionHandler == NULL )
-            return;     // no point going further, really
-        
-        if ( error == 0 )
-        {
-            // All the data was written successfully.
-            completionHandler(nil, nil);
-            return;
-        }
-        
-        // Here we are once again relying upon CFErrorRef's magical 'fill in
-        // the POSIX error userInfo' functionality.
-        NSError * errObj = [NSError errorWithDomain: NSPOSIXErrorDomain code: error userInfo: nil];
-        
-        NSData * unwritten = nil;
-        if ( data != NULL )
-            unwritten = [[_AQDispatchData alloc] initWithDispatchData: data];
-        
-        completionHandler(unwritten, errObj);
-#if USING_MRR
-        [unwritten release];
-#endif
-    });
+    // Pass the write along to our IO channel, along with the completion/unsent handler.
+    [_socketIO writeData: bytes withCompletion: completionHandler];
 }
 
 @end
@@ -484,30 +499,30 @@ static BOOL _SocketAddressFromString(NSString * addrStr, BOOL isNumeric, UInt16 
     // 3. The dispatch source which will notify us of incoming data.
     
     // Before all that though, we'll remove the CFSocketRef from the runloop.
-    CFRunLoopRemoveSource(CFRunLoopGetMain(), _socketRunloopSource, kCFRunLoopDefaultMode);
-    CFRunLoopRemoveSource(CFRunLoopGetMain(), _socketRunloopSource, (__bridge CFStringRef)
+    if ( _socketRunloopSource != NULL )
+    {
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), _socketRunloopSource, kCFRunLoopDefaultMode);
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), _socketRunloopSource, (__bridge CFStringRef)
 #if TARGET_OS_IPHONE
-                          UITrackingRunLoopMode
+                              UITrackingRunLoopMode
 #else
-                          NSEventTrackingRunLoopMode
+                              NSEventTrackingRunLoopMode
 #endif
-                          );
-    
-    // All done with this one now.
-    CFRelease(_socketRunloopSource);
-    _socketRunloopSource = NULL;
+                              );
+        
+        // All done with this one now.
+        CFRelease(_socketRunloopSource);
+        _socketRunloopSource = NULL;
+    }
     
     // First, the IO channel. We will have its cleanup handler release the
     // CFSocketRef for us; in other words, the IO channel now owns the
     // CFSocketRef.
-    _socketIO = dispatch_io_create(DISPATCH_IO_STREAM, CFSocketGetNative(_socketRef), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^(int error) {
-        if ( error != 0 )
-            NSLog(@"Error in dispatch IO channel causing its shutdown: %d", error);
-        
+    _socketIO = [[AQSocketIOChannel alloc] initWithNativeSocket: CFSocketGetNative(_socketRef) cleanupHandler: ^{
         // all done with the socket reference, make it noticeably go away.
         CFRelease(_socketRef);
         _socketRef = NULL;
-    });
+    }];
     
     // Next the socket reader object. This will keep track of all the data blobs
     // returned via dispatch_io_read(), providing peek support to the upper
@@ -518,37 +533,14 @@ static BOOL _SocketAddressFromString(NSString * addrStr, BOOL isNumeric, UInt16 
     _readWatcher = dispatch_source_create(DISPATCH_SOURCE_TYPE_READ, CFSocketGetNative(_socketRef), 0, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0));
     
     // The source handler will read all data asynchronously into a buffer
-    // using dispatch_io_read(), and will suspend itself until the full read
+    // using our IO channel, and will suspend itself until the full read
     // is satisfied.
     dispatch_source_set_event_handler(_readWatcher, ^{
-        // Pull down all available data into our AQSocketReader, then pass that
-        // to the event handler once it's complete.
-        dispatch_io_read(_socketIO, 0, SIZE_MAX, dispatch_get_current_queue(), ^(_Bool done, dispatch_data_t data, int error) {
-            if ( data != NULL )
-                [_socketReader appendDispatchData: data];
-            
-            if ( error != 0 )
-                NSLog(@"dispatch_io_read() error: %d", error);
-            
-            if ( !done )
-                return;
-            
-            // If we're using manual memory management, ensure the socket reader
-            // doesn't go away during the client call.
-#if USING_MRR
-            [_socketReader retain];
-#endif
-            // We've read everything, so notify the event handler that there's
-            // data waiting to be handled.
-            self.eventHandler(AQSocketEventDataAvailable, _socketReader);
-#if USING_MRR
-            [_socketReader release];
-#endif
-            
-            // Lastly, since we've run out of incoming data, we will resume the
-            // read notification dispatch source.
+        // Ask our IO channel to pull in all the data that's currently available.
+        [_socketIO drainReadChannelIntoReader: _socketReader withCompletion: ^{
+            // Resume the read watcher to find out when next there are some bytes available.
             dispatch_resume(_readWatcher);
-        });
+        }];
         
         // Having enqueued our writes, let's suspend read notifications until
         // we've read all the incoming data.
@@ -572,6 +564,21 @@ static BOOL _SocketAddressFromString(NSString * addrStr, BOOL isNumeric, UInt16 
     // Get rid of the socket now, since we might try to re-connect, which will
     // create a new CFSocketRef.
     CFRelease(_socketRef); _socketRef = NULL;
+}
+
+@end
+
+@implementation AQSocket (CFSocketAcceptCallback)
+
+- (void) acceptNewConnection: (CFSocketNativeHandle) clientSock
+{
+    AQSocket * child = [[AQSocket alloc] initWithConnectedSocket: clientSock];
+    if ( child == nil )
+        return;
+    
+    // Inform the client about the appearance of the child socket.
+    // It's up to the client to keep it around -- we just pass it on as appropriate.
+    self.eventHandler(AQSocketEventAcceptedNewConnection, child);
 }
 
 @end
