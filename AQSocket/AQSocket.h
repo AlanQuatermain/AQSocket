@@ -53,6 +53,16 @@ typedef enum
     
 } AQSocketEvent;
 
+typedef enum
+{
+    AQSocketUnconnected,                    /// The socket is ready to connect but none has yet been initiated.
+    AQSocketConnecting,                     /// The socket is waiting for a connection to complete.
+    AQSocketListening,                      /// The socket is bound to a local address/port and is waiting to accept new connections.
+    AQSocketConnected,                      /// The socket has successfully connected to a remote host and can be used to send and receive data.
+    AQSocketDisconnected                    /// The socket has disconnected and is no longer usable.
+    
+} AQSocketStatus;
+
 /** A block-based event handler. This is called for connection events (for both
  client and server-side sockets) and for incoming data. Note that it does NOT
  advertise writability-- writing happens via a separate, sequenced,
@@ -90,7 +100,7 @@ typedef void (^AQSocketEventHandler)(AQSocketEvent event, id info);
 /// be connected or otherwise used. See AQSocketEventHandler for more discussion.
 @property (nonatomic, copy) AQSocketEventHandler eventHandler;
 
-/** @name Connecting */
+/** @name Connections */
 
 /**
  Connects the socket to its remote server asynchronously, notifying success or
@@ -144,6 +154,27 @@ typedef void (^AQSocketEventHandler)(AQSocketEvent event, id info);
 - (BOOL) connectToIPAddress: (NSString *) address
                        port: (UInt16) port
                       error: (NSError **) error;
+
+/**
+ Closes the socket and ceases all handling of input and output.
+ */
+- (void) close;
+
+/**
+ Returns the connection status of the socket.
+ @result One of the following values:
+    * `AQSocketUnconnected`:
+        The socket is ready to connect but none has yet been initiated.
+    * `AQSocketConnecting`:
+        The socket is waiting for a connection to complete.
+    * `AQSocketListening`:
+        The socket is bound to a local address/port and is waiting to accept new connections.
+    * `AQSocketConnected`:
+        The socket has successfully connected to a remote host and can be used to send and receive data.
+    * `AQSocketDisconnected`:
+        The socket has disconnected and is no longer usable.
+ */
+@property (nonatomic, readonly) AQSocketStatus status;
 
 /** @name Data Transmission */
 

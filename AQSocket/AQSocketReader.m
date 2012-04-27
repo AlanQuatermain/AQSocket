@@ -35,6 +35,7 @@
 
 #import "AQSocketReader.h"
 #import "AQSocketReader+PrivateInternal.h"
+#import "AQSocketIOChannel.h"
 #import <dispatch/dispatch.h>
 
 #define LOCKED(block) do {                                          \
@@ -62,6 +63,16 @@
 }
 
 @synthesize offset=_offset, lock=_lock;
+
++ (id) allocWithZone: (NSZone *) zone
+{
+    if ( self == [AQSocketReader class] && dispatch_data_create != 0 )
+    {
+        return ( [AQSocketDispatchDataReader allocWithZone: zone] );
+    }
+    
+    return ( [super allocWithZone: zone] );
+}
 
 - (id) init
 {
@@ -243,7 +254,10 @@
         size_t sizeToCopy = stillNeeded > size ? size : size - stillNeeded;
         
         if ( sizeToCopy > 0 )
+        {
             memcpy(buffer + copied, buf, sizeToCopy);
+            copied += sizeToCopy;
+        }
         
         // if this region satisfied the read, then cease iteration
         if ( off + size >= length )
@@ -258,28 +272,29 @@
 
 - (void) _removeBytesOfLength: (NSUInteger) length
 {
+    // NB: this is called while the lock is already held.
     if ( _data == NULL )
         return;
     
-    LOCKED(^{
-        if ( self.length == length )
-        {
-#if DISPATCH_USES_ARC == 0
-            dispatch_release(_data);
-#endif
-            _data = NULL;
-            return;
-        }
-        
-        // simple version: just create a subrange data object
-        dispatch_data_t newData = dispatch_data_create_subrange(_data, length, self.length - length);
-        if ( newData == NULL )
-            return;     // ARGH!
+    self.offset = self.offset - length;
+    
+    if ( self.length == length )
+    {
 #if DISPATCH_USES_ARC == 0
         dispatch_release(_data);
 #endif
-        _data = newData;
-    });
+        _data = NULL;
+        return;
+    }
+    
+    // simple version: just create a subrange data object
+    dispatch_data_t newData = dispatch_data_create_subrange(_data, length, self.length - length);
+    if ( newData == NULL )
+        return;     // ARGH!
+#if DISPATCH_USES_ARC == 0
+    dispatch_release(_data);
+#endif
+    _data = newData;
 }
 
 - (NSData *) peekBytes: (NSUInteger) count
@@ -301,14 +316,16 @@
     if ( _data == NULL )
         return ( nil );
     
-    NSMutableData * result = [NSMutableData dataWithCapacity: count];
+    NSMutableData * result = [NSMutableData dataWithLength: count];
     
     LOCKED(^{
-        [self _copyBytes: (uint8_t*)[result mutableBytes]
-                  length: count];
+        size_t copied = [self _copyBytes: (uint8_t*)[result mutableBytes]
+                                  length: count];
+        [result setLength: copied];
+        self.offset = self.offset + copied;
         
         // adjust content parameters while the lock is still held
-        [self _removeBytesOfLength: count];
+        [self _removeBytesOfLength: copied];
     });
 	
 	return ( result );
@@ -337,7 +354,9 @@
     LOCKED(^{
         if ( _data == NULL )
         {
+#if DISPATCH_USES_ARC == 0
             dispatch_retain(appendedData);
+#endif
             _data = appendedData;
         }
         else
@@ -358,6 +377,14 @@
 {
     if ( [data length] == 0 )
         return;
+    
+    if ( [data isKindOfClass: [_AQDispatchData class]] )
+    {
+        _AQDispatchData * __data = (_AQDispatchData *)data;
+        dispatch_data_t ddata = [__data _aq_getDispatchData];
+        [self appendDispatchData: ddata];
+        return;
+    }
     
     // Ensure we have an immutable data object. If it's already immutable, this -copy just does -retain.
     NSData * dataCopy = [data copy];
